@@ -1,0 +1,7 @@
+*.json
+*.pbf
+*.graph.*
+bin/
+.vscode/
+*.txt
+*.graph
