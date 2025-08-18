@@ -24,18 +24,15 @@ func main() {
 
 	graph := datastructure.NewGraph()
 	graph.InitGraph(processedNodes, graphStorage, streetDirection, osmParser.GetTagStringIdMap())
-	// using npartitons
-	// r := int(math.Ceil(float64(len(graph.GetNodes())) / float64(*npartition))) // regionSize (number of nodes in each partition)
 
-	// using balance
-	// balance := 0.43                                               //  number of nodes in the smaller subgraph divided by the total number of nodes
-	// r := int(math.Ceil(balance * float64(len(graph.GetNodes())))) // regionSize (number of nodes in each partition)
-	r := int(math.Pow(2, 15))
+	// r = regionSize
+	// r := int(math.Pow(2, 15)) 
+	r := int(math.Pow(2, 12))
 	partitioner.NewInertialFlow(int32(len(graph.GetNodes())), r).RunInertialFlow(graph)
 
 	// if *useMetis {
-	// 	// partitioner.SaveMetisGraphFile(graph)
-	// 	partitioner.ReadMetisGraphFile("nyc.graph.part.7", graph, 7)
+	// 	// partitioner.SaveMetisGraphFile(graph, strings.Split(*mapFile, ".")[0])
+	// 	// run gpmetis ...
+	// 	// partitioner.ReadMetisGraphFile("nyc.graph.part.64", graph, 64)
 	// }
-
 }

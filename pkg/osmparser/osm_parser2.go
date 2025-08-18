@@ -672,6 +672,7 @@ func (p *OsmParser) addEdge(segment []node, tempMap map[string]string, speed flo
 
 		// reversed edge
 		//uncomment this lines if you want to use metis
+		// comment these lines if you want to use inertial flow algorithm
 		if p.useMetis {
 			graphStorage.SetRoundabout(int32(len(graphStorage.EdgeStorage)), isRoundabout)
 
@@ -687,7 +688,6 @@ func (p *OsmParser) addEdge(segment []node, tempMap map[string]string, speed flo
 			graphStorage.AppendEdgeStorage(
 				datastructure.NewEdge(int32(len(graphStorage.EdgeStorage)), p.nodeIDMap[from.id], p.nodeIDMap[to.id],
 					-1, etaWeight, distanceInMeter, false))
-
 		}
 	}
 }

@@ -41,18 +41,36 @@ https://cdn.jsdelivr.net/npm/@mapbox/polyline@1.2.1/src/polyline.min.js
         maxZoom: 19,
       }).addTo(map);
 
-      const colors = [
-        "red",
-        "blue",
-        "green",
-        "orange",
-        "purple",
-        "cyan",
-        "magenta",
-        "yellow",
-      ];
+      // const colors = [
+      //   "red",
+      //   "blue",
+      //   "green",
+      //   "orange",
+      //   "purple",
+      //   "cyan",
+      //   "magenta",
+      //   "yellow",
+      // ];
 
-      fetch("nodePerPartitions_metis.json") // nodePerPartitions_metis.json nodePerPartitions_inertial_flow.json
+      function generateDistinctColors(n) {
+        // evenly spaced hues, then shuffle for randomness
+        const arr = Array.from({ length: n }, (_, i) => {
+          const h = (360 * i) / n; // hue
+          const s = 70; // saturation %
+          const l = 55; // lightness %
+          return `hsl(${h}, ${s}%, ${l}%)`;
+        });
+        // Fisher-Yates shuffle
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+      }
+
+      const colors = generateDistinctColors(64);
+
+      fetch("nodePerPartitions_inertial_flow.json") // nodePerPartitions_metis.json nodePerPartitions_inertial_flow.json
         .then((response) => response.json())
         .then((partitions) => {
           const allCoords = [];

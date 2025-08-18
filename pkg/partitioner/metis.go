@@ -11,8 +11,8 @@ import (
 	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
 )
 
-func SaveMetisGraphFile(graph *datastructure.Graph) {
-	file, err := os.Create("file.txt")
+func SaveMetisGraphFile(graph *datastructure.Graph, name string) {
+	file, err := os.Create(fmt.Sprintf(`file_%v.txt`, name))
 	if err != nil {
 		log.Fatal(err)
 	}

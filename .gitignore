@@ -4,4 +4,6 @@
 bin/
 .vscode/
 *.txt
+!notes.txt
 *.graph
+./main

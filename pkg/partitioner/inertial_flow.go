@@ -7,28 +7,30 @@ import (
 	"math"
 	"os"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
 	"golang.org/x/exp/rand"
 )
 
-// will be used to implement customizable route planning & GTree
+// will be used to implement customizable route planning
+// ngasal heheh
 // idk if this implementation is correct, but the partition result is very good & similiar to metis partition result
 type InertialFlow struct {
 	regionSize     int
 	regionsCreated int
+	targetRegions  int
 	partitions     [][]int32
 	cutEdges       []datastructure.Edge
-	wg             sync.WaitGroup
-	mu             sync.Mutex
 }
 
 func NewInertialFlow(v int32, regionSize int) *InertialFlow {
+	targetRegions := floorPow2(int(math.Ceil(float64(v / int32(regionSize)))))
+
 	return &InertialFlow{
 		regionSize:     regionSize,
-		regionsCreated: 1,
+		targetRegions:  targetRegions,
+		regionsCreated: 0,
 		partitions:     make([][]int32, 0),
 		cutEdges:       make([]datastructure.Edge, 0),
 	}
@@ -39,9 +41,24 @@ var (
 )
 
 const (
-	b = 0.25
+	b                  = 0.25
+	artificialSourceID = int32(2147483646)
+	artificialSinkID   = int32(2147483647)
 )
 
+// floorPow2 return the largest power of 2 that is <= n.
+func floorPow2(n int) int {
+	if n < 1 {
+		return 0
+	}
+	p := 1
+	for p<<1 <= n {
+		p <<= 1
+	}
+	return p
+}
+
+// https://www.sommer.jp/roadseparator.pdf
 func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 
 	start := time.Now()
@@ -51,34 +68,34 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 	for i, node := range graph.GetNodes() {
 		initialNodeIDs[i] = node.ID
 	}
-	targetRegions := int(math.Ceil(float64(nodesCount / iflow.regionSize)))
-	log.Printf("target regions: %d", targetRegions)
+	log.Printf("target regions: %d", iflow.targetRegions)
 
-	iflow.wg.Add(1)
-	go iflow.recursiveBisection(
-		initialNodeIDs, graph,
+	iflow.recursiveBisection(
+		initialNodeIDs, graph, 0,
 	)
-	iflow.wg.Wait()
 
-	iflow.partitions = iflow.partitions[len(iflow.partitions)-targetRegions:]
 	iflow.saveCutEdgesToFile(iflow.cutEdges, graph)
+	// visited := make([]bool, len(graph.GetNodes()))
+	// for i := 0; i < len(iflow.partitions); i++ {
+	// 	for nodeIndex, nodeID := range iflow.partitions[i] {
+	// 		if nodeID == 0 {
+	// 			log.Printf("bro, nodeID 0 found in partition %d, index %d", i, nodeIndex)
+	// 		}
+	// 		if visited[nodeID] {
+	// 			log.Printf("bro harusnya gak visited: %d, %d", nodeID, nodeIndex)
+	// 		}
+	// 		visited[nodeID] = true
+	// 	}
+	// }
 	iflow.savePartitionsToFile(iflow.partitions, graph, "inertial_flow")
 	log.Printf("regionSize(r): %d, regions created: %d, boundary (min-cut) size: %d, time: %ds", iflow.regionSize,
 		iflow.regionsCreated, len(iflow.cutEdges), int(time.Since(start).Seconds()))
 }
 
-func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastructure.Graph,
+// recursiveBisection. recursively bisect the graph until number of partitions is equal to floorPow2(int(math.Ceil(float64(numNodes / int32(regionSize)))))
+func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastructure.Graph, level int,
 ) {
 	v := len(nodeIDs)
-	defer iflow.wg.Done()
-
-	iflow.mu.Lock()
-	targetRegions := int(math.Ceil(float64(len(graph.GetNodes()) / iflow.regionSize)))
-	done := iflow.regionsCreated >= targetRegions
-	iflow.mu.Unlock()
-	if done || len(nodeIDs) <= 5 {
-		return
-	}
 
 	line := lines[rand.Intn(len(lines))]
 	sort.Slice(nodeIDs, func(i, j int) bool {
@@ -106,12 +123,8 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 		sinks[i] = nodeIDs[v-1-i]
 	}
 
-	artificialSource := datastructure.NewCHNode(
-		0, 0, 0, int32(v),
-	)
-	artificialSink := datastructure.NewCHNode(
-		0, 0, 0, int32(v+1),
-	)
+	idToIndex[artificialSourceID] = int32(v)
+	idToIndex[artificialSinkID] = int32(v + 1)
 
 	dinic := NewDinicMinCut(int32(v + 2))
 	for _, nodeID := range nodeIDs {
@@ -119,27 +132,37 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 		for _, edgeIDx := range graph.GetNodeFirstOutEdges(nodeID) {
 			edge := graph.GetOutEdge(edgeIDx)
 			v := idToIndex[edge.ToNodeID]
+			_, ok := idToIndex[edge.ToNodeID]
+			if u == v || nodeID == edge.ToNodeID || !ok {
+				continue // skip self-loop & edge that point to node that is not in the current partition
+			}
 			dinic.addEdge(u, v, edge.Weight, edge.Directed)
 		}
 	}
 
 	for _, sourceID := range sources {
-		dinic.addEdge(artificialSource.ID, idToIndex[sourceID], infFlow, true)
+		if idToIndex[sourceID] == idToIndex[artificialSourceID] {
+			continue
+		}
+		dinic.addEdge(idToIndex[artificialSourceID], idToIndex[sourceID], infFlow, true)
 	}
 
 	for _, sinkID := range sinks {
-		dinic.addEdge(idToIndex[sinkID], artificialSink.ID, infFlow, true)
+		if idToIndex[artificialSinkID] == idToIndex[sinkID] {
+			continue
+		}
+		dinic.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
 	}
 
 	// run dinic algorithm
-	dinic.dinic(artificialSource.ID, artificialSink.ID)
+	dinic.dinic(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
 	bisectedGraph := [2][]int32{}
 	visited := make([]bool, v+2)
 
 	// get min-cut
 	localMinCuts := make([]datastructure.Edge, 0)
-	dinic.dfsMinCutMultipleSourcesSinks(int32(artificialSource.ID), &bisectedGraph, visited,
-		int32(artificialSource.ID), int32(artificialSink.ID), &localMinCuts)
+	dinic.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
+		int32(idToIndex[artificialSourceID]), int32(idToIndex[artificialSinkID]), &localMinCuts)
 
 	for i := 0; i < len(localMinCuts); i++ {
 		localMinCuts[i].FromNodeID = indexToID[localMinCuts[i].FromNodeID]
@@ -155,21 +178,16 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 		part1[i] = indexToID[idx]
 	}
 
-	iflow.mu.Lock()
-	regionsCreated := iflow.regionsCreated
-	regionsCreated++
-	continueBisection := regionsCreated < targetRegions
+	continueBisection := level < int(math.Log2(float64(iflow.targetRegions)))-1
 	if continueBisection {
-		iflow.regionsCreated = regionsCreated
+		log.Printf("recursiveBisection: %d nodes, %d partitions created", v, iflow.regionsCreated)
+		iflow.recursiveBisection(part0, graph, level+1)
+		iflow.recursiveBisection(part1, graph, level+1)
+	} else {
+		iflow.regionsCreated += 2
 		iflow.partitions = append(iflow.partitions, part0, part1)
 		iflow.cutEdges = append(iflow.cutEdges, localMinCuts...)
-		log.Printf("recursiveBisection: %d nodes, %d regions created", v, iflow.regionsCreated)
-		iflow.wg.Add(2)
-		go iflow.recursiveBisection(part0, graph)
-		go iflow.recursiveBisection(part1, graph)
 	}
-	iflow.mu.Unlock()
-
 }
 
 type cutEdge struct {
@@ -206,8 +224,10 @@ func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *dat
 	type partitionType struct {
 		Nodes []datastructure.Coordinate `json:"nodes"`
 	}
+	nodes := make([]int, len(graph.GetNodes()))
+
 	parts := []partitionType{}
-	for _, partition := range partitions {
+	for partitionID, partition := range partitions {
 		rand.Seed(uint64(time.Now().UnixNano()))
 		rand.Shuffle(len(partition), func(i, j int) { partition[i], partition[j] = partition[j], partition[i] })
 		partitionNodes := make([]datastructure.Coordinate, 0)
@@ -221,6 +241,10 @@ func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *dat
 		parts = append(parts, partitionType{
 			Nodes: partitionNodes,
 		})
+
+		for _, nodeID := range partition {
+			nodes[nodeID] = partitionID
+		}
 	}
 	buf, err := json.MarshalIndent(parts, "", "  ")
 	if err != nil {
@@ -230,4 +254,5 @@ func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *dat
 	if err := os.WriteFile(fmt.Sprintf("nodePerPartitions_%s.json", name), buf, 0644); err != nil {
 		panic(err)
 	}
+
 }
