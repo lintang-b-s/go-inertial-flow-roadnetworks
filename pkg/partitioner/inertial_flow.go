@@ -251,6 +251,8 @@ func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *dat
 		panic(err)
 	}
 
+	fmt.Printf("nodes after partitioning: %v\n", len(nodes))
+
 	if err := os.WriteFile(fmt.Sprintf("nodePerPartitions_%s.json", name), buf, 0644); err != nil {
 		panic(err)
 	}
