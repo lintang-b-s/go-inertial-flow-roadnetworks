@@ -25,7 +25,14 @@ func main() {
 	graph := datastructure.NewGraph()
 	graph.InitGraph(processedNodes, graphStorage, streetDirection, osmParser.GetTagStringIdMap())
 
-	r := int(math.Pow(2, 17))
-	partitioner.NewInertialFlow(int32(len(graph.GetNodes())), r).RunInertialFlow(graph)
+	// r := int(math.Pow(2, 17))
+	// partitioner.NewInertialFlow( r).RunInertialFlow(graph)
 
+	// run mlp
+	mlp := partitioner.NewMultilevelPartitioner(
+		[]int{int(math.Pow(2, 8)), int(math.Pow(2, 11)), int(math.Pow(2, 14)), int(math.Pow(2, 17)), int(math.Pow(2, 20))},
+		5,
+		graph,
+	)
+	mlp.Run("solo_jogja_best_param_crp")
 }

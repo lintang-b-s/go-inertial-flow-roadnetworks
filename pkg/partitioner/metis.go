@@ -93,6 +93,6 @@ func ReadMetisGraphFile(filePath string, graph *datastructure.Graph,
 
 	}
 
-	iflow := NewInertialFlow(int32(len(graph.GetNodes())), nPartition)
+	iflow := NewInertialFlow(nPartition)
 	iflow.savePartitionsToFile(partitions, graph, "metis")
 }

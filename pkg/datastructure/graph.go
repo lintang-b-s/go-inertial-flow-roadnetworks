@@ -86,6 +86,14 @@ func (ch *Graph) GetNodes() []CHNode {
 	return ch.ContractedNodes
 }
 
+func (ch *Graph) GetNodeIDs() []int32 {
+	ids := make([]int32, len(ch.ContractedNodes))
+	for i, node := range ch.ContractedNodes {
+		ids[i] = node.ID
+	}
+	return ids
+}
+
 func (ch *Graph) GetNode(nodeID int32) CHNode {
 	return ch.ContractedNodes[nodeID]
 }

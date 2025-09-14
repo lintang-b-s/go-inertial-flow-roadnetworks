@@ -19,17 +19,13 @@ import (
 type InertialFlow struct {
 	regionSize     int
 	regionsCreated int
-	targetRegions  int
 	partitions     [][]int32
 	cutEdges       []datastructure.Edge
 }
 
-func NewInertialFlow(v int32, regionSize int) *InertialFlow {
-	// targetRegions := floorPow2(int(math.Ceil(float64(v / int32(regionSize)))))
-	targetRegions := int(math.Ceil(float64(v) / float64(regionSize)))
+func NewInertialFlow(regionSize int) *InertialFlow {
 	return &InertialFlow{
 		regionSize:     regionSize,
-		targetRegions:  targetRegions,
 		regionsCreated: 0,
 		partitions:     make([][]int32, 0),
 		cutEdges:       make([]datastructure.Edge, 0),
@@ -87,8 +83,8 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 	log.Printf("running inertial flow partitioning..., with at most %d nodes per cell", iflow.regionSize)
 
 	for _, pNodeIDs := range bigSCCs {
-		iflow.recursiveBisection(
-			pNodeIDs, graph, 0,
+		iflow.RecursiveBisection(
+			pNodeIDs, graph,
 		)
 	}
 
@@ -101,8 +97,9 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 		iflow.regionsCreated, len(iflow.cutEdges), int(time.Since(start).Seconds()))
 }
 
-// recursiveBisection. recursively bisect the graph until number of partitions is equal to floorPow2(int(math.Ceil(float64(numNodes / int32(regionSize)))))
-func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastructure.Graph, level int,
+// RecursiveBisection. recursively bisect the graph until the number of nodes in the partition is <= regionSize
+// TODO: make this function run concurrently for each recursion using goroutine pool
+func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastructure.Graph,
 ) {
 	v := len(nodeIDs)
 	var lines = [][]float64{{1, 0}, {0, 1}, {1, 1}, {-1, 1}}
@@ -115,25 +112,25 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 	var (
 		idToIndex     map[int32]int32
 		indexToID     []int32
-		fordFulkerson *EdmondsKarp
+		edmondsKarp *EdmondsKarp
 	)
 	minRatioCut := math.Inf(1)
 
 	sort.Slice(nodeIDs, func(i, j int) bool {
 		a, b := nodeIDs[i], nodeIDs[j]
-
 		return graph.GetNode(a).Lon*line[0]+
 			graph.GetNode(a).Lat*line[1] <
 			graph.GetNode(b).Lon*line[0]+
 				graph.GetNode(b).Lat*line[1]
 	})
-	minCut, curFordFulkerson, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
+
+	minCut, curedmondsKarp, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
 	ratioCut := minCut / float64(len(nodeIDs))
 	if ratioCut < minRatioCut {
 		minRatioCut = ratioCut
 		idToIndex = currIdToIndex
 		indexToID = currIndexToID
-		fordFulkerson = curFordFulkerson
+		edmondsKarp = curedmondsKarp
 	}
 
 	bisectedGraph := [2][]int32{}
@@ -141,7 +138,7 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 
 	// get min-cut
 	localMinCuts := make([]datastructure.Edge, 0)
-	fordFulkerson.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
+	edmondsKarp.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
 		int32(idToIndex[artificialSourceID]), int32(idToIndex[artificialSinkID]), &localMinCuts)
 
 	for i := 0; i < len(localMinCuts); i++ {
@@ -161,8 +158,8 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 	continueBisection := len(nodeIDs) > iflow.regionSize
 	if continueBisection {
 		log.Printf("recursiveBisection: %d nodes, %d partitions created", v, iflow.regionsCreated)
-		iflow.recursiveBisection(part0, graph, level+1)
-		iflow.recursiveBisection(part1, graph, level+1)
+		iflow.RecursiveBisection(part0, graph)
+		iflow.RecursiveBisection(part1, graph)
 	} else {
 		iflow.regionsCreated += 1
 		iflow.partitions = append(iflow.partitions, nodeIDs)
@@ -190,7 +187,7 @@ func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructu
 	idToIndex[artificialSourceID] = int32(v)
 	idToIndex[artificialSinkID] = int32(v + 1)
 
-	fordFulkerson := NewEdmondsKarp(int32(v + 2))
+	edmondsKarp := NewEdmondsKarp(int32(v + 2))
 	for _, nodeID := range nodeIDs {
 		u := idToIndex[nodeID]
 		for _, edgeIDx := range graph.GetNodeFirstOutEdges(nodeID) {
@@ -200,7 +197,7 @@ func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructu
 			if u == v || nodeID == edge.ToNodeID || !ok {
 				continue // skip self-loop & edge that point to node that is not in the current partition
 			}
-			fordFulkerson.addEdge(u, v, edge.Weight, edge.Directed)
+			edmondsKarp.addEdge(u, v, edge.Weight, edge.Directed)
 
 		}
 	}
@@ -209,17 +206,17 @@ func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructu
 		if idToIndex[sourceID] == idToIndex[artificialSourceID] {
 			continue
 		}
-		fordFulkerson.addEdge(idToIndex[artificialSourceID], idToIndex[sourceID], infFlow, true)
+		edmondsKarp.addEdge(idToIndex[artificialSourceID], idToIndex[sourceID], infFlow, true)
 	}
 
 	for _, sinkID := range sinks {
 		if idToIndex[artificialSinkID] == idToIndex[sinkID] {
 			continue
 		}
-		fordFulkerson.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
+		edmondsKarp.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
 	}
-	minCut := fordFulkerson.run(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
-	return minCut, fordFulkerson, idToIndex, indexToID
+	minCut := edmondsKarp.run(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
+	return minCut, edmondsKarp, idToIndex, indexToID
 }
 
 type cutEdge struct {
