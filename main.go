@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	mapFile    = flag.String("f", "nyc.osm.pbf", "openstreeetmap file buat road network graphnya")
+	mapFile    = flag.String("f", "solo_jogja.osm.pbf", "openstreeetmap file buat road network graphnya")
 	npartition = flag.Int("n", 16, "jumlah partisi yang diinginkan, default 16")
 	useMetis   = flag.Bool("metis", false, "metis")
 )
@@ -25,14 +25,7 @@ func main() {
 	graph := datastructure.NewGraph()
 	graph.InitGraph(processedNodes, graphStorage, streetDirection, osmParser.GetTagStringIdMap())
 
-	// r = regionSize
-	// r := int(math.Pow(2, 15)) 
-	r := int(math.Pow(2, 12))
+	r := int(math.Pow(2, 14))
 	partitioner.NewInertialFlow(int32(len(graph.GetNodes())), r).RunInertialFlow(graph)
 
-	// if *useMetis {
-	// 	// partitioner.SaveMetisGraphFile(graph, strings.Split(*mapFile, ".")[0])
-	// 	// run gpmetis ...
-	// 	// partitioner.ReadMetisGraphFile("nyc.graph.part.64", graph, 64)
-	// }
 }

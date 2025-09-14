@@ -2,14 +2,13 @@ package partitioner
 
 import (
 	"container/list"
-	"math"
 
 	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
 )
 
 const (
 	inf     = 1e18
-	infFlow = 1e10
+	infFlow = 1e18
 	eps     = 1e-12
 )
 
@@ -42,21 +41,21 @@ func NewDinicMinCut(v int32) *DinicMinCut {
 	return dinic
 }
 
-func (d *DinicMinCut) addEdge(u, v int32, w float64, directed bool) {
+
+func (d *DinicMinCut) addEdge(u, v int32, w float64, _ bool) {
 	if u == v {
 		return
 	}
+	// forward edge
 	d.edgeList = append(d.edgeList, newMaxFlowEdge(v, w, 0))
 	d.adjacencyList[u] = append(d.adjacencyList[u], int32(len(d.edgeList)-1))
-	if !directed {
-		d.edgeList = append(d.edgeList, newMaxFlowEdge(u, w, 0))
-	} else {
-		d.edgeList = append(d.edgeList, newMaxFlowEdge(u, 0, 0))
-	}
+
+	d.edgeList = append(d.edgeList, newMaxFlowEdge(u, 0, 0))
 	d.adjacencyList[v] = append(d.adjacencyList[v], int32(len(d.edgeList)-1))
+	// notes: we add reverse edge in consecutive order, so we can use edgeID^1 to get the reverse edge
 }
 
-func (d *DinicMinCut) bfs(s, t int32) bool { // find augmenting path
+func (d *DinicMinCut) bfs(s, t int32) bool { // build level graph
 	d.level = make([]int32, d.v)
 	for i := int32(0); i < d.v; i++ {
 		d.level[i] = -1
@@ -74,34 +73,37 @@ func (d *DinicMinCut) bfs(s, t int32) bool { // find augmenting path
 		for _, idx := range d.adjacencyList[uVal] {
 			// explore neighbors of u
 			v, cap, flow := d.edgeList[idx].v, d.edgeList[idx].capacity, d.edgeList[idx].flow
-			if (cap-flow) > 0 && d.level[v] == -1 {
-				// positive residual edge
+			residual := (cap - flow)
+			if residual > 0 && d.level[v] == -1 {
+				// unvisited edge with positive residual capacity
 				d.level[v] = d.level[uVal] + 1
 				queue.PushBack(v)
 			}
 		}
 	}
 
-	return d.level[t] != -1 // has an augmenting path
+	return d.level[t] != -1 // return false if sink is not reachable from source (graph is saturated)
 }
 
-func (d *DinicMinCut) dfs(u, t int32, flow float64) float64 { // traverse from s->t
-	if (u == t) || (flow == 0) {
-		return flow
+func (d *DinicMinCut) dfs(u, t int32, minFlow float64) float64 { // send flow along the level graph
+	if (u == t) || (minFlow == 0) {
+		return minFlow
 	}
 
-	for ; d.last[u] < int32(len(d.adjacencyList[u])); d.last[u]++ { // from last edge
+	for ; d.last[u] < int32(len(d.adjacencyList[u])); d.last[u]++ { // from last edge to avoid dead-ends
 		edgeID := d.adjacencyList[u][d.last[u]]
 		edge := &d.edgeList[edgeID]
 		v := edge.v
 		if d.level[v] != d.level[u]+1 {
-			continue // not part of layer graph
+			continue // not part of level graph
 		}
-		if pushed := d.dfs(edge.v, t, min(flow, edge.capacity-edge.flow)); pushed > 0 {
-			edge.flow += pushed
-			d.edgeList[edgeID^1].flow -= pushed // subtract flow from reverse edge
+		residual := edge.capacity - edge.flow
+		if flow := d.dfs(edge.v, t, min(minFlow, residual)); flow > 0 {
+			// augment flow
+			edge.flow += flow
+			d.edgeList[edgeID^1].flow -= flow // subtract flow from reverse edge
 			// we add reverse edge in consecutive order, so we can use edgeID^1 to get the reverse edge
-			return pushed
+			return flow
 		}
 
 	}
@@ -110,17 +112,12 @@ func (d *DinicMinCut) dfs(u, t int32, flow float64) float64 { // traverse from s
 
 func (d *DinicMinCut) dinic(s, t int32) float64 {
 	maxflow := 0.0
-	for {
-		if !d.bfs(s, t) {
-			break
-		}
+	for d.bfs(s, t) {
 		d.last = make([]int32, d.v)
-		for {
-			pushed := d.dfs(s, t, math.Inf(1))
-			if pushed <= 0 {
-				break
-			}
-			maxflow += pushed
+		flow := d.dfs(s, t, inf)
+		for flow > 0 {
+			maxflow += flow
+			flow = d.dfs(s, t, inf)
 		}
 	}
 	return maxflow

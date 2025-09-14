@@ -9,6 +9,13 @@ import (
 	"golang.org/x/exp/rand"
 )
 
+func Min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func StringToFloat64(str string) (float64, error) {
 	val, err := strconv.ParseFloat(str, 64)
 	if err != nil {

@@ -25,8 +25,8 @@ type InertialFlow struct {
 }
 
 func NewInertialFlow(v int32, regionSize int) *InertialFlow {
-	targetRegions := floorPow2(int(math.Ceil(float64(v / int32(regionSize)))))
-
+	// targetRegions := floorPow2(int(math.Ceil(float64(v / int32(regionSize)))))
+	targetRegions := int(math.Ceil(float64(v) / float64(regionSize)))
 	return &InertialFlow{
 		regionSize:     regionSize,
 		targetRegions:  targetRegions,
@@ -35,10 +35,6 @@ func NewInertialFlow(v int32, regionSize int) *InertialFlow {
 		cutEdges:       make([]datastructure.Edge, 0),
 	}
 }
-
-var (
-	lines = [4][]int{{1, 0}, {0, 1}, {1, 1}, {-1, 1}}
-)
 
 const (
 	b                  = 0.25
@@ -58,35 +54,47 @@ func floorPow2(n int) int {
 	return p
 }
 
+func (iflow *InertialFlow) PrePartitionSCC(graph *datastructure.Graph, smallComponentSize int32) ([][]int32, [][]int32) {
+	tarjan := NewTarjanSCC(len(graph.GetNodes()))
+	tarjan.run(graph)
+	scc, sccSizes := tarjan.GetSCC()
+
+	// only bisect the non-small scc
+	bigSCCs := make([][]int32, 0, len(scc))
+	smallSCCs := make([][]int32, 0, len(scc))
+
+	for i, size := range sccSizes {
+		if size > smallComponentSize {
+			bigSCCs = append(bigSCCs, scc[i])
+		} else {
+			smallSCCs = append(smallSCCs, scc[i])
+		}
+	}
+
+	return bigSCCs, smallSCCs
+}
+
 // https://www.sommer.jp/roadseparator.pdf
 func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 
 	start := time.Now()
 
-	nodesCount := len(graph.GetNodes())
-	initialNodeIDs := make([]int32, nodesCount)
-	for i, node := range graph.GetNodes() {
-		initialNodeIDs[i] = node.ID
-	}
-	log.Printf("target regions: %d", iflow.targetRegions)
+	log.Printf("prepartitioning...")
+	bigSCCs, smallSCCs := iflow.PrePartitionSCC(graph, int32(math.Pow(2, 12)))
 
-	iflow.recursiveBisection(
-		initialNodeIDs, graph, 0,
-	)
+	log.Printf("prepartitioning done... %d big sccs, %d small sccs", len(bigSCCs), len(smallSCCs))
+
+	log.Printf("running inertial flow partitioning..., with at most %d nodes per cell", iflow.regionSize)
+	for _, pNodeIDs := range bigSCCs {
+		iflow.recursiveBisection(
+			pNodeIDs, graph, 0,
+		)
+	}
+
+	iflow.partitions = append(iflow.partitions, smallSCCs...)
 
 	iflow.saveCutEdgesToFile(iflow.cutEdges, graph)
-	// visited := make([]bool, len(graph.GetNodes()))
-	// for i := 0; i < len(iflow.partitions); i++ {
-	// 	for nodeIndex, nodeID := range iflow.partitions[i] {
-	// 		if nodeID == 0 {
-	// 			log.Printf("bro, nodeID 0 found in partition %d, index %d", i, nodeIndex)
-	// 		}
-	// 		if visited[nodeID] {
-	// 			log.Printf("bro harusnya gak visited: %d, %d", nodeID, nodeIndex)
-	// 		}
-	// 		visited[nodeID] = true
-	// 	}
-	// }
+
 	iflow.savePartitionsToFile(iflow.partitions, graph, "inertial_flow")
 	log.Printf("regionSize(r): %d, regions created: %d, boundary (min-cut) size: %d, time: %ds", iflow.regionSize,
 		iflow.regionsCreated, len(iflow.cutEdges), int(time.Since(start).Seconds()))
@@ -96,17 +104,92 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastructure.Graph, level int,
 ) {
 	v := len(nodeIDs)
-
+	var lines = [][]float64{{1, 0}, {0, 1}, {1, 1}, {-1, 1}}
+	for i := 0; i < 2; i++ {
+		a := rand.Float64() // [0,1)
+		b := rand.Float64() // [0,1)
+		lines = append(lines, []float64{a, b})
+	}
 	line := lines[rand.Intn(len(lines))]
+	var (
+		idToIndex map[int32]int32
+		indexToID []int32
+		dinic     *DinicMinCut
+	)
+	minRatioCut := math.Inf(1)
+
+	// for i := range lines {
+	// 	line := lines[i]
+	// 	sort.Slice(nodeIDs, func(i, j int) bool {
+	// 		a, b := nodeIDs[i], nodeIDs[j]
+
+	// 		return graph.GetNode(a).Lon*line[0]+
+	// 			graph.GetNode(a).Lat*line[1] <
+	// 			graph.GetNode(b).Lon*line[0]+
+	// 				graph.GetNode(b).Lat*line[1]
+	// 	})
+	// 	minCut, currDinic, currIdToIndex, currIndexToID := iflow.runDinic(nodeIDs, v, graph)
+	// 	ratioCut := minCut / float64(len(nodeIDs))
+	// 	if ratioCut < minRatioCut {
+	// 		minRatioCut = ratioCut
+	// 		idToIndex = currIdToIndex
+	// 		indexToID = currIndexToID
+	// 		dinic = currDinic
+	// 	}
+	// }
+
 	sort.Slice(nodeIDs, func(i, j int) bool {
 		a, b := nodeIDs[i], nodeIDs[j]
 
-		return graph.GetNode(a).Lon*float64(line[0])+
-			graph.GetNode(a).Lat*float64(line[1]) <
-			graph.GetNode(b).Lon*float64(line[0])+
-				graph.GetNode(b).Lat*float64(line[1])
+		return graph.GetNode(a).Lon*line[0]+
+			graph.GetNode(a).Lat*line[1] <
+			graph.GetNode(b).Lon*line[0]+
+				graph.GetNode(b).Lat*line[1]
 	})
+	minCut, currDinic, currIdToIndex, currIndexToID := iflow.runDinic(nodeIDs, v, graph)
+	ratioCut := minCut / float64(len(nodeIDs))
+	if ratioCut < minRatioCut {
+		minRatioCut = ratioCut
+		idToIndex = currIdToIndex
+		indexToID = currIndexToID
+		dinic = currDinic
+	}
 
+	bisectedGraph := [2][]int32{}
+	visited := make([]bool, v+2)
+
+	// get min-cut
+	localMinCuts := make([]datastructure.Edge, 0)
+	dinic.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
+		int32(idToIndex[artificialSourceID]), int32(idToIndex[artificialSinkID]), &localMinCuts)
+
+	for i := 0; i < len(localMinCuts); i++ {
+		localMinCuts[i].FromNodeID = indexToID[localMinCuts[i].FromNodeID]
+		localMinCuts[i].ToNodeID = indexToID[localMinCuts[i].ToNodeID]
+	}
+
+	part0 := make([]int32, len(bisectedGraph[0]))
+	for i, idx := range bisectedGraph[0] {
+		part0[i] = indexToID[idx]
+	}
+	part1 := make([]int32, len(bisectedGraph[1]))
+	for i, idx := range bisectedGraph[1] {
+		part1[i] = indexToID[idx]
+	}
+
+	continueBisection := len(nodeIDs) > iflow.regionSize
+	if continueBisection {
+		log.Printf("recursiveBisection: %d nodes, %d partitions created", v, iflow.regionsCreated)
+		iflow.recursiveBisection(part0, graph, level+1)
+		iflow.recursiveBisection(part1, graph, level+1)
+	} else {
+		iflow.regionsCreated += 1
+		iflow.partitions = append(iflow.partitions, nodeIDs)
+		iflow.cutEdges = append(iflow.cutEdges, localMinCuts...)
+	}
+}
+
+func (iflow *InertialFlow) runDinic(nodeIDs []int32, v int, graph *datastructure.Graph) (float64, *DinicMinCut, map[int32]int32, []int32) {
 	indexToID := make([]int32, v)         // map for index to node ID
 	idToIndex := make(map[int32]int32, v) // map for node ID to index
 	for i, id := range nodeIDs {
@@ -137,6 +220,7 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 				continue // skip self-loop & edge that point to node that is not in the current partition
 			}
 			dinic.addEdge(u, v, edge.Weight, edge.Directed)
+
 		}
 	}
 
@@ -153,41 +237,8 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 		}
 		dinic.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
 	}
-
-	// run dinic algorithm
-	dinic.dinic(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
-	bisectedGraph := [2][]int32{}
-	visited := make([]bool, v+2)
-
-	// get min-cut
-	localMinCuts := make([]datastructure.Edge, 0)
-	dinic.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
-		int32(idToIndex[artificialSourceID]), int32(idToIndex[artificialSinkID]), &localMinCuts)
-
-	for i := 0; i < len(localMinCuts); i++ {
-		localMinCuts[i].FromNodeID = indexToID[localMinCuts[i].FromNodeID]
-		localMinCuts[i].ToNodeID = indexToID[localMinCuts[i].ToNodeID]
-	}
-
-	part0 := make([]int32, len(bisectedGraph[0]))
-	for i, idx := range bisectedGraph[0] {
-		part0[i] = indexToID[idx]
-	}
-	part1 := make([]int32, len(bisectedGraph[1]))
-	for i, idx := range bisectedGraph[1] {
-		part1[i] = indexToID[idx]
-	}
-
-	continueBisection := level < int(math.Log2(float64(iflow.targetRegions)))-1
-	if continueBisection {
-		log.Printf("recursiveBisection: %d nodes, %d partitions created", v, iflow.regionsCreated)
-		iflow.recursiveBisection(part0, graph, level+1)
-		iflow.recursiveBisection(part1, graph, level+1)
-	} else {
-		iflow.regionsCreated += 2
-		iflow.partitions = append(iflow.partitions, part0, part1)
-		iflow.cutEdges = append(iflow.cutEdges, localMinCuts...)
-	}
+	minCut := dinic.dinic(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
+	return minCut, dinic, idToIndex, indexToID
 }
 
 type cutEdge struct {

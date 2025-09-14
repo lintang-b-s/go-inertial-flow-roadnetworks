@@ -73,12 +73,7 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 		ch.ContractedFirstOutEdge[edge.FromNodeID] = append(ch.ContractedFirstOutEdge[edge.FromNodeID], int32(edgeID))
 
 		ch.Metadata.OutEdgeOrigCount[edge.FromNodeID]++
-
 		edgeID++
-
-		// tambah degree nodenya
-		ch.Metadata.degrees[edge.FromNodeID]++
-		ch.Metadata.degrees[edge.ToNodeID]++
 	}
 
 	log.Printf("initializing osm graph done... \n total nodes: %d", gLen)
