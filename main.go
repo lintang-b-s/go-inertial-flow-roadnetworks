@@ -25,7 +25,7 @@ func main() {
 	graph := datastructure.NewGraph()
 	graph.InitGraph(processedNodes, graphStorage, streetDirection, osmParser.GetTagStringIdMap())
 
-	r := int(math.Pow(2, 14))
+	r := int(math.Pow(2, 17))
 	partitioner.NewInertialFlow(int32(len(graph.GetNodes())), r).RunInertialFlow(graph)
 
 }

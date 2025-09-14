@@ -9,9 +9,9 @@ import (
 const (
 	inf     = 1e18
 	infFlow = 1e18
-	eps     = 1e-12
 )
 
+// gak bisa buat multiple sources, sinks
 type maxFlowEdge struct {
 	v        int32
 	capacity float64
@@ -41,16 +41,15 @@ func NewDinicMinCut(v int32) *DinicMinCut {
 	return dinic
 }
 
-
 func (d *DinicMinCut) addEdge(u, v int32, w float64, _ bool) {
 	if u == v {
 		return
 	}
 	// forward edge
-	d.edgeList = append(d.edgeList, newMaxFlowEdge(v, w, 0))
+	d.edgeList = append(d.edgeList, newMaxFlowEdge(v, w, 0.0))
 	d.adjacencyList[u] = append(d.adjacencyList[u], int32(len(d.edgeList)-1))
 
-	d.edgeList = append(d.edgeList, newMaxFlowEdge(u, 0, 0))
+	d.edgeList = append(d.edgeList, newMaxFlowEdge(u, 0.0, 0.0))
 	d.adjacencyList[v] = append(d.adjacencyList[v], int32(len(d.edgeList)-1))
 	// notes: we add reverse edge in consecutive order, so we can use edgeID^1 to get the reverse edge
 }
@@ -74,8 +73,12 @@ func (d *DinicMinCut) bfs(s, t int32) bool { // build level graph
 			// explore neighbors of u
 			v, cap, flow := d.edgeList[idx].v, d.edgeList[idx].capacity, d.edgeList[idx].flow
 			residual := (cap - flow)
-			if residual > 0 && d.level[v] == -1 {
+			if residual > 0.0 && d.level[v] == -1 {
 				// unvisited edge with positive residual capacity
+				if v == t {
+					//
+					_ = v
+				}
 				d.level[v] = d.level[uVal] + 1
 				queue.PushBack(v)
 			}
@@ -98,7 +101,8 @@ func (d *DinicMinCut) dfs(u, t int32, minFlow float64) float64 { // send flow al
 			continue // not part of level graph
 		}
 		residual := edge.capacity - edge.flow
-		if flow := d.dfs(edge.v, t, min(minFlow, residual)); flow > 0 {
+
+		if flow := d.dfs(edge.v, t, min(minFlow, residual)); flow > 0.0 {
 			// augment flow
 			edge.flow += flow
 			d.edgeList[edgeID^1].flow -= flow // subtract flow from reverse edge
@@ -107,7 +111,7 @@ func (d *DinicMinCut) dfs(u, t int32, minFlow float64) float64 { // send flow al
 		}
 
 	}
-	return 0
+	return 0.0
 }
 
 func (d *DinicMinCut) dinic(s, t int32) float64 {
@@ -115,7 +119,7 @@ func (d *DinicMinCut) dinic(s, t int32) float64 {
 	for d.bfs(s, t) {
 		d.last = make([]int32, d.v)
 		flow := d.dfs(s, t, inf)
-		for flow > 0 {
+		for flow > 0.0 {
 			maxflow += flow
 			flow = d.dfs(s, t, inf)
 		}

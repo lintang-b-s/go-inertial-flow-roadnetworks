@@ -85,6 +85,7 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 	log.Printf("prepartitioning done... %d big sccs, %d small sccs", len(bigSCCs), len(smallSCCs))
 
 	log.Printf("running inertial flow partitioning..., with at most %d nodes per cell", iflow.regionSize)
+
 	for _, pNodeIDs := range bigSCCs {
 		iflow.recursiveBisection(
 			pNodeIDs, graph, 0,
@@ -112,31 +113,11 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 	}
 	line := lines[rand.Intn(len(lines))]
 	var (
-		idToIndex map[int32]int32
-		indexToID []int32
-		dinic     *DinicMinCut
+		idToIndex     map[int32]int32
+		indexToID     []int32
+		fordFulkerson *EdmondsKarp
 	)
 	minRatioCut := math.Inf(1)
-
-	// for i := range lines {
-	// 	line := lines[i]
-	// 	sort.Slice(nodeIDs, func(i, j int) bool {
-	// 		a, b := nodeIDs[i], nodeIDs[j]
-
-	// 		return graph.GetNode(a).Lon*line[0]+
-	// 			graph.GetNode(a).Lat*line[1] <
-	// 			graph.GetNode(b).Lon*line[0]+
-	// 				graph.GetNode(b).Lat*line[1]
-	// 	})
-	// 	minCut, currDinic, currIdToIndex, currIndexToID := iflow.runDinic(nodeIDs, v, graph)
-	// 	ratioCut := minCut / float64(len(nodeIDs))
-	// 	if ratioCut < minRatioCut {
-	// 		minRatioCut = ratioCut
-	// 		idToIndex = currIdToIndex
-	// 		indexToID = currIndexToID
-	// 		dinic = currDinic
-	// 	}
-	// }
 
 	sort.Slice(nodeIDs, func(i, j int) bool {
 		a, b := nodeIDs[i], nodeIDs[j]
@@ -146,13 +127,13 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 			graph.GetNode(b).Lon*line[0]+
 				graph.GetNode(b).Lat*line[1]
 	})
-	minCut, currDinic, currIdToIndex, currIndexToID := iflow.runDinic(nodeIDs, v, graph)
+	minCut, curFordFulkerson, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
 	ratioCut := minCut / float64(len(nodeIDs))
 	if ratioCut < minRatioCut {
 		minRatioCut = ratioCut
 		idToIndex = currIdToIndex
 		indexToID = currIndexToID
-		dinic = currDinic
+		fordFulkerson = curFordFulkerson
 	}
 
 	bisectedGraph := [2][]int32{}
@@ -160,7 +141,7 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 
 	// get min-cut
 	localMinCuts := make([]datastructure.Edge, 0)
-	dinic.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
+	fordFulkerson.dfsMinCutMultipleSourcesSinks(int32(idToIndex[artificialSourceID]), &bisectedGraph, visited,
 		int32(idToIndex[artificialSourceID]), int32(idToIndex[artificialSinkID]), &localMinCuts)
 
 	for i := 0; i < len(localMinCuts); i++ {
@@ -189,7 +170,7 @@ func (iflow *InertialFlow) recursiveBisection(nodeIDs []int32, graph *datastruct
 	}
 }
 
-func (iflow *InertialFlow) runDinic(nodeIDs []int32, v int, graph *datastructure.Graph) (float64, *DinicMinCut, map[int32]int32, []int32) {
+func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructure.Graph) (float64, *EdmondsKarp, map[int32]int32, []int32) {
 	indexToID := make([]int32, v)         // map for index to node ID
 	idToIndex := make(map[int32]int32, v) // map for node ID to index
 	for i, id := range nodeIDs {
@@ -209,7 +190,7 @@ func (iflow *InertialFlow) runDinic(nodeIDs []int32, v int, graph *datastructure
 	idToIndex[artificialSourceID] = int32(v)
 	idToIndex[artificialSinkID] = int32(v + 1)
 
-	dinic := NewDinicMinCut(int32(v + 2))
+	fordFulkerson := NewEdmondsKarp(int32(v + 2))
 	for _, nodeID := range nodeIDs {
 		u := idToIndex[nodeID]
 		for _, edgeIDx := range graph.GetNodeFirstOutEdges(nodeID) {
@@ -219,7 +200,7 @@ func (iflow *InertialFlow) runDinic(nodeIDs []int32, v int, graph *datastructure
 			if u == v || nodeID == edge.ToNodeID || !ok {
 				continue // skip self-loop & edge that point to node that is not in the current partition
 			}
-			dinic.addEdge(u, v, edge.Weight, edge.Directed)
+			fordFulkerson.addEdge(u, v, edge.Weight, edge.Directed)
 
 		}
 	}
@@ -228,17 +209,17 @@ func (iflow *InertialFlow) runDinic(nodeIDs []int32, v int, graph *datastructure
 		if idToIndex[sourceID] == idToIndex[artificialSourceID] {
 			continue
 		}
-		dinic.addEdge(idToIndex[artificialSourceID], idToIndex[sourceID], infFlow, true)
+		fordFulkerson.addEdge(idToIndex[artificialSourceID], idToIndex[sourceID], infFlow, true)
 	}
 
 	for _, sinkID := range sinks {
 		if idToIndex[artificialSinkID] == idToIndex[sinkID] {
 			continue
 		}
-		dinic.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
+		fordFulkerson.addEdge(idToIndex[sinkID], idToIndex[artificialSinkID], infFlow, true)
 	}
-	minCut := dinic.dinic(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
-	return minCut, dinic, idToIndex, indexToID
+	minCut := fordFulkerson.run(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
+	return minCut, fordFulkerson, idToIndex, indexToID
 }
 
 type cutEdge struct {
