@@ -7,3 +7,4 @@ bin/
 !notes.txt
 *.graph
 ./main
+*.mlp

@@ -3,6 +3,7 @@ package partitioner
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 
 	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
@@ -57,6 +58,7 @@ func (mp *MulitlevelPartitioner) Run(paramName string) {
 	}
 
 	mp.writeMLPToFile(paramName)
+	mp.writeMLPToMLPFile(fmt.Sprintf("multilevel_partitioning_%s.mlp", paramName))
 }
 
 // writeMLPToFile. write each level in separate txt file
@@ -90,6 +92,50 @@ func (mp *MulitlevelPartitioner) writeMLPToFile(paramName string) {
 			if err != nil {
 				panic(err)
 			}
+		}
+	}
+}
+
+func (mp *MulitlevelPartitioner) writeMLPToMLPFile(filename string) {
+
+	numCells := make([]int, mp.l)
+	for i := 0; i < mp.l; i++ {
+		numCells[i] = len(mp.overlayNodes[i])
+	}
+
+	pvOffset := make([]int, mp.l+1)
+	for i := 0; i < mp.l; i++ {
+		pvOffset[i+1] = pvOffset[i] + int(math.Ceil(math.Log2(float64(numCells[i])))) // ceil(log2(numCells[i])) = number of bits needed to represent cell id in level-i
+	}
+
+	cellNumbers := make([]uint64, len(mp.graph.GetNodeIDs())) // 64 bit integer. rightmost contain level 0 cellId, leftmost contain level l-1 cellId
+
+	for l := 0; l < mp.l; l++ {
+		for cellId, vertexIds := range mp.overlayNodes[l] {
+			for _, vertexId := range vertexIds {
+				cellNumbers[vertexId] |= uint64(cellId) << uint64(pvOffset[l])
+			}
+		}
+	}
+
+	f, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+
+	defer f.Close()
+
+	for i := 0; i < len(numCells); i++ {
+		_, err := f.WriteString(fmt.Sprintf("%d\n", numCells[i]))
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	for _, vertexID := range mp.graph.GetNodeIDs() {
+		_, err := f.WriteString(fmt.Sprintf("%d\n", cellNumbers[vertexID]))
+		if err != nil {
+			panic(err)
 		}
 	}
 }
