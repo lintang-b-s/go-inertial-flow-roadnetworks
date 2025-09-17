@@ -125,11 +125,21 @@ func (mp *MulitlevelPartitioner) writeMLPToMLPFile(filename string) {
 
 	defer f.Close()
 
+	_, err = f.WriteString(fmt.Sprintf("%d\n", len(numCells)))
+	if err != nil {
+		panic(err)
+	}
+
 	for i := 0; i < len(numCells); i++ {
 		_, err := f.WriteString(fmt.Sprintf("%d\n", numCells[i]))
 		if err != nil {
 			panic(err)
 		}
+	}
+
+	_, err = f.WriteString(fmt.Sprintf("%d\n", len(mp.graph.GetNodeIDs())))
+	if err != nil {
+		panic(err)
 	}
 
 	for _, vertexID := range mp.graph.GetNodeIDs() {
