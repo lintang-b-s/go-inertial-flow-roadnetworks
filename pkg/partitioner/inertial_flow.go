@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
 	"golang.org/x/exp/rand"
 )
 
@@ -101,6 +101,14 @@ func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
 // TODO: make this function run concurrently for each recursion using goroutine pool
 func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastructure.Graph,
 ) {
+	continueBisection := len(nodeIDs) > iflow.regionSize
+	if !continueBisection {
+		iflow.regionsCreated += 1
+		log.Printf("recursiveBisection: %d partitions created", iflow.regionsCreated)
+		iflow.partitions = append(iflow.partitions, nodeIDs)
+		return
+	}
+
 	v := len(nodeIDs)
 	var lines = [][]float64{{1, 0}, {0, 1}, {1, 1}, {-1, 1}}
 	for i := 0; i < 2; i++ {
@@ -110,11 +118,10 @@ func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastruct
 	}
 	line := lines[rand.Intn(len(lines))]
 	var (
-		idToIndex     map[int32]int32
-		indexToID     []int32
+		idToIndex   map[int32]int32
+		indexToID   []int32
 		edmondsKarp *EdmondsKarp
 	)
-	minRatioCut := math.Inf(1)
 
 	sort.Slice(nodeIDs, func(i, j int) bool {
 		a, b := nodeIDs[i], nodeIDs[j]
@@ -124,14 +131,10 @@ func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastruct
 				graph.GetNode(b).Lat*line[1]
 	})
 
-	minCut, curedmondsKarp, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
-	ratioCut := minCut / float64(len(nodeIDs))
-	if ratioCut < minRatioCut {
-		minRatioCut = ratioCut
-		idToIndex = currIdToIndex
-		indexToID = currIndexToID
-		edmondsKarp = curedmondsKarp
-	}
+	_, curedmondsKarp, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
+	idToIndex = currIdToIndex
+	indexToID = currIndexToID
+	edmondsKarp = curedmondsKarp
 
 	bisectedGraph := [2][]int32{}
 	visited := make([]bool, v+2)
@@ -155,16 +158,8 @@ func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastruct
 		part1[i] = indexToID[idx]
 	}
 
-	continueBisection := len(nodeIDs) > iflow.regionSize
-	if continueBisection {
-		log.Printf("recursiveBisection: %d nodes, %d partitions created", v, iflow.regionsCreated)
-		iflow.RecursiveBisection(part0, graph)
-		iflow.RecursiveBisection(part1, graph)
-	} else {
-		iflow.regionsCreated += 1
-		iflow.partitions = append(iflow.partitions, nodeIDs)
-		iflow.cutEdges = append(iflow.cutEdges, localMinCuts...)
-	}
+	iflow.RecursiveBisection(part0, graph)
+	iflow.RecursiveBisection(part1, graph)
 }
 
 func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructure.Graph) (float64, *EdmondsKarp, map[int32]int32, []int32) {
@@ -226,7 +221,7 @@ type cutEdge struct {
 	ToLon   float64 `json:"toLon"`
 }
 
-func (iflow *InertialFlow) saveCutEdgesToFile(cutEdges []datastructure.Edge, graph *datastructure.Graph) {
+func (iflow *InertialFlow) saveCutEdgesToFile(cutEdges []datastructure.Edge, graph *datastructure.Graph) error {
 	cutEdgesCoord := make([]cutEdge, 0)
 	for _, edge := range cutEdges {
 		from := graph.GetNode(edge.FromNodeID)
@@ -240,16 +235,17 @@ func (iflow *InertialFlow) saveCutEdgesToFile(cutEdges []datastructure.Edge, gra
 	}
 	buf, err := json.MarshalIndent(cutEdgesCoord, "", "  ")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if err := os.WriteFile("cutEdges.json", buf, 0644); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
 func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *datastructure.Graph,
-	name string) {
+	name string) error {
 	type partitionType struct {
 		Nodes []datastructure.Coordinate `json:"nodes"`
 	}
@@ -277,13 +273,14 @@ func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *dat
 	}
 	buf, err := json.MarshalIndent(parts, "", "  ")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	fmt.Printf("nodes after partitioning: %v\n", len(nodes))
 
 	if err := os.WriteFile(fmt.Sprintf("nodePerPartitions_%s.json", name), buf, 0644); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 
 }

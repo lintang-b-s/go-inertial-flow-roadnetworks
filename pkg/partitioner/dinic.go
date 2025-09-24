@@ -3,7 +3,7 @@ package partitioner
 import (
 	"container/list"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
 )
 
 const (

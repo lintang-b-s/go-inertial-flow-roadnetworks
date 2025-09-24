@@ -1,6 +1,6 @@
 package partitioner
 
-import "github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
+import "github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
 
 type FordFulkerson struct {
 	v             int32

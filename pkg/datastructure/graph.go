@@ -3,7 +3,7 @@ package datastructure
 import (
 	"log"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/util"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/util"
 )
 
 type Metadata struct {
@@ -19,6 +19,7 @@ type Graph struct {
 	ContractedNodes        []CHNode
 	Metadata               Metadata
 	ContractedFirstOutEdge [][]int32
+	ContractedFirstInEdge  [][]int32
 
 	SCC                []int32 // map for nodeID -> sccID
 	SCCNodesCount      []int32 // map for sccID -> nodes count in scc
@@ -64,6 +65,7 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 
 	edgeID := int32(0)
 	ch.ContractedFirstOutEdge = make([][]int32, len(ch.ContractedNodes))
+	ch.ContractedFirstInEdge = make([][]int32, len(ch.ContractedNodes))
 
 	log.Printf("intializing original osm graph...")
 
@@ -73,6 +75,9 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 		ch.ContractedFirstOutEdge[edge.FromNodeID] = append(ch.ContractedFirstOutEdge[edge.FromNodeID], int32(edgeID))
 
 		ch.Metadata.OutEdgeOrigCount[edge.FromNodeID]++
+
+		ch.ContractedFirstInEdge[edge.ToNodeID] = append(ch.ContractedFirstInEdge[edge.ToNodeID], int32(edgeID))
+
 		edgeID++
 	}
 
@@ -84,6 +89,10 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 
 func (ch *Graph) GetNodes() []CHNode {
 	return ch.ContractedNodes
+}
+
+func (ch *Graph) GetNodeCount() int {
+	return len(ch.ContractedNodes)
 }
 
 func (ch *Graph) GetNodeIDs() []int32 {
@@ -102,8 +111,20 @@ func (ch *Graph) GetNodeFirstOutEdges(nodeID int32) []int32 {
 	return ch.ContractedFirstOutEdge[nodeID]
 }
 
+func (ch *Graph) GetOutDegree(nodeID int32) int {
+	return len(ch.ContractedFirstOutEdge[nodeID])
+}
+
+func (ch *Graph) GetNodeFirstInEdges(nodeID int32) []int32 {	
+	return ch.ContractedFirstInEdge[nodeID]
+}
+
 func (ch *Graph) GetOutEdge(edgeID int32) Edge {
 	return ch.GraphStorage.GetOutEdge(edgeID)
+}
+
+func (ch *Graph) GetInEdge(edgeID int32) Edge {
+	return ch.GraphStorage.GetInEdge(edgeID)
 }
 
 func (ch *Graph) GetOutEdgeCount() int {

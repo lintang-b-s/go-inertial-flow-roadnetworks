@@ -1,1 +1,1 @@
-# go-graph-inertial-flow
+# navigatorx-partitioner

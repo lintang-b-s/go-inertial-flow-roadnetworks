@@ -3,8 +3,8 @@ package geo
 import (
 	"math"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/util"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/util"
 
 	"github.com/golang/geo/s2"
 )

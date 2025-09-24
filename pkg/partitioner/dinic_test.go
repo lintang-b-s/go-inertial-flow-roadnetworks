@@ -4,7 +4,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
 	"github.com/stretchr/testify/assert"
 )
 

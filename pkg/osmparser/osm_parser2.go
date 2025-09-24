@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/datastructure"
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/geo"
-	"github.com/lintang-b-s/go-graph-inertial-flow/pkg/util"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/geo"
+	"github.com/lintang-b-s/navigatorx-partitioner/pkg/util"
 
 	"github.com/paulmach/osm"
 	"github.com/paulmach/osm/osmpbf"
@@ -35,10 +35,9 @@ type OsmParser struct {
 	tagStringIdMap    util.IDMap
 	nodeIDMap         map[int64]int32
 	maxNodeID         int64
-	useMetis          bool
 }
 
-func NewOSMParserV2(useMetis bool) *OsmParser {
+func NewOSMParserV2() *OsmParser {
 	return &OsmParser{
 		wayNodeMap:        make(map[int64]NodeType),
 		relationMemberMap: make(map[int64]struct{}),
@@ -47,7 +46,6 @@ func NewOSMParserV2(useMetis bool) *OsmParser {
 		nodeTag:           make(map[int64]map[int]int),
 		tagStringIdMap:    util.NewIdMap(),
 		nodeIDMap:         make(map[int64]int32),
-		useMetis:          useMetis,
 	}
 }
 func (o *OsmParser) GetTagStringIdMap() util.IDMap {
@@ -286,8 +284,9 @@ func (p *OsmParser) Parse(mapFile string) ([]datastructure.CHNode, *datastructur
 		}
 	}
 
-	processedNodes := make([]datastructure.CHNode, len(p.nodeIDMap)+1)
+	processedNodes := make([]datastructure.CHNode, len(p.nodeIDMap))
 
+	nodeId := int32(0)
 	for nodeID, nodeIDX := range p.nodeIDMap {
 		coord := p.acceptedNodeMap[nodeID]
 
@@ -295,8 +294,8 @@ func (p *OsmParser) Parse(mapFile string) ([]datastructure.CHNode, *datastructur
 
 			graphStorage.SetTrafficLight(nodeIDX)
 		}
-		processedNodes[nodeIDX] = datastructure.NewCHNode(coord.lat, coord.lon, 0, nodeIDX)
-
+		processedNodes[nodeIDX] = datastructure.NewCHNode(coord.lat, coord.lon, nodeId, nodeIDX)
+		nodeId++
 	}
 
 	log.Printf("total edges: %d", len(graphStorage.EdgeStorage))
@@ -670,19 +669,6 @@ func (p *OsmParser) addEdge(segment []node, tempMap map[string]string, speed flo
 				-1, etaWeight, distanceInMeter, false))
 
 		graphStorage.SetRoundabout(int32(len(graphStorage.EdgeStorage)), isRoundabout)
-
-		graphStorage.AppendMapEdgeInfo(datastructure.NewEdgeExtraInfo(
-			p.tagStringIdMap.GetID(tempMap[STREET_NAME]),
-			uint8(p.tagStringIdMap.GetID(tempMap[ROAD_CLASS])),
-			uint8(lanes),
-			uint8(p.tagStringIdMap.GetID(tempMap[ROAD_CLASS_LINK])),
-			uint32(endPointsIndex), uint32(startPointsIndex),
-		),
-		)
-
-		graphStorage.AppendEdgeStorage(
-			datastructure.NewEdge(int32(len(graphStorage.EdgeStorage)), p.nodeIDMap[from.id], p.nodeIDMap[to.id],
-				-1, etaWeight, distanceInMeter, false))
 
 	}
 }
