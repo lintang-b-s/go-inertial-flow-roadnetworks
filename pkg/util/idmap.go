@@ -5,7 +5,6 @@ type IDMap struct {
 	IDToStr map[int]string
 }
 
-
 func NewIdMap() IDMap {
 	return IDMap{
 		StrToID: make(map[string]int),
@@ -29,7 +28,3 @@ func (idMap *IDMap) GetStr(id int) string {
 	}
 	return ""
 }
-
-
-
-

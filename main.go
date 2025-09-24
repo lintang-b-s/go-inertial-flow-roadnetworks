@@ -34,9 +34,9 @@ func main() {
 		5,
 		graph,
 	)
-	err := mlp.Run("inertial_flow_5_level_crp")
+
+	err := mlp.RunMLPKaffpa("kaffpa_test_5_level_crp")
 	if err != nil {
 		panic(err)
 	}
-	// err := mlp.RunMLPKaffpa("kaffpa_test_5_level")
 }
