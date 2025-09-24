@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
@@ -50,13 +51,26 @@ func (mp *MulitlevelPartitioner) Run(paramName string) error {
 
 	// next partition each cell in previous level
 	for level := mp.l - 2; level >= 0; level-- {
+		verticesInLevel := make([]int32, 0, len(mp.graph.GetNodeIDs()))
+
 		log.Printf("partitioning level %d with max cell size %d", level, mp.u[level])
 		for _, cell := range mp.overlayNodes[level+1] {
 			// TODO: make each cell partitioning run concurently using goroutine pool
 			iflow := NewInertialFlow(mp.u[level])
 			iflow.RecursiveBisection(cell, mp.graph)
 			mp.overlayNodes[level] = append(mp.overlayNodes[level], iflow.partitions...)
+			for _, partitionVertices := range iflow.partitions {
+				verticesInLevel = append(verticesInLevel, partitionVertices...)
+			}
 		}
+
+		sort.Slice(verticesInLevel, func(i, j int) bool { return verticesInLevel[i] < verticesInLevel[j] })
+		for i, v := range verticesInLevel {
+			if v != int32(i) {
+				panic(fmt.Sprintf("verticesInLevel[%d] = %d, expected %d", i, v, i))
+			}
+		}
+
 		log.Printf("level %d done, total cells: %d", level, len(mp.overlayNodes[level]))
 	}
 
@@ -65,6 +79,13 @@ func (mp *MulitlevelPartitioner) Run(paramName string) error {
 		return err
 	}
 	return mp.writeMLPToMLPFile(fmt.Sprintf("multilevel_partitioning_%s.mlp", paramName))
+}
+
+func (mp *MulitlevelPartitioner) ReadMLPAndCreateCellNumber(paramName string) {
+	// start from highest level
+	mp.ReadAllMLPFile(paramName)
+
+	mp.writeMLPToMLPFile(fmt.Sprintf("multilevel_partitioning_%s.mlp", paramName))
 }
 
 func (mp *MulitlevelPartitioner) RunMLPKaffpa(name string) error {
@@ -87,6 +108,7 @@ func (mp *MulitlevelPartitioner) RunMLPKaffpa(name string) error {
 
 	// next partition each cell in previous level
 	for level := mp.l - 2; level >= 0; level-- {
+		verticesInLevel := make([]int32, 0, len(mp.graph.GetNodeIDs()))
 		log.Printf("partitioning level %d with max cell size %d", level, mp.u[level])
 		for cellId, cell := range mp.overlayNodes[level+1] {
 			log.Printf("partitioning cell %d in level %d", cellId, level+1)
@@ -98,6 +120,16 @@ func (mp *MulitlevelPartitioner) RunMLPKaffpa(name string) error {
 			mp.overlayNodes[level] = append(mp.overlayNodes[level], partitions...)
 			log.Printf("level %d, cell %d done, total cells: %d", level, cellId, len(mp.overlayNodes[level]))
 
+			for _, partitionVertices := range partitions {
+				verticesInLevel = append(verticesInLevel, partitionVertices...)
+			}
+		}
+
+		sort.Slice(verticesInLevel, func(i, j int) bool { return verticesInLevel[i] < verticesInLevel[j] })
+		for i, v := range verticesInLevel {
+			if v != int32(i) {
+				panic(fmt.Sprintf("verticesInLevel[%d] = %d, expected %d", i, v, i))
+			}
 		}
 
 		log.Printf("level %d done, total cells: %d", level, len(mp.overlayNodes[level]))
@@ -126,10 +158,11 @@ func (mp *MulitlevelPartitioner) writeMLPToFile(paramName string) error {
 		}
 
 		log.Printf("level %d, total nodes: %d", i, len(nodeIDCellMap))
+
 		for _, nodeID := range mp.graph.GetNodeIDs() {
 			cellID, exists := nodeIDCellMap[nodeID]
 			if !exists {
-				return err
+				panic(fmt.Sprintf("nodeID %d not found in cell map", nodeID))
 			}
 
 			_, err := f.WriteString(fmt.Sprintf("%d\n", cellID))
@@ -137,6 +170,71 @@ func (mp *MulitlevelPartitioner) writeMLPToFile(paramName string) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func (mp *MulitlevelPartitioner) ReadAllMLPFile(paramName string) error {
+	for i := 0; i < mp.l; i++ {
+		filename := fmt.Sprintf("multilevel_partitioning_level_%d_u_%d_%s.txt", i, mp.u[i], paramName)
+
+		file, err := os.Open(filename)
+
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		stat, err := file.Stat()
+		if err != nil {
+			return err
+		}
+
+		fileSize := stat.Size()
+		buf := make([]byte, fileSize)
+
+		_, err = file.Read(buf)
+		if err != nil {
+			return err
+		}
+
+		lines := string(buf)
+		lineArr := make([]string, 0)
+		currentLine := ""
+		// only read number and not newline
+		for _, ch := range lines {
+			if ch == '\n' {
+				lineArr = append(lineArr, currentLine)
+				currentLine = ""
+			} else {
+				currentLine += string(ch)
+			}
+		}
+		if currentLine != "" {
+			lineArr = append(lineArr, currentLine)
+		}
+
+		nodeIDCellMap := make(map[int32]int)
+
+		for idx, line := range lineArr {
+			var cellID int
+			_, err := fmt.Sscanf(line, "%d", &cellID)
+			if err != nil {
+				return err
+			}
+			nodeIDCellMap[int32(idx)] = cellID
+		}
+
+		cells := make([][]int32, 0)
+		cellIDNodeMap := make(map[int][]int32)
+		for nodeID, cellID := range nodeIDCellMap {
+			cellIDNodeMap[cellID] = append(cellIDNodeMap[cellID], nodeID)
+		}
+
+		for _, cell := range cellIDNodeMap {
+			cells = append(cells, cell)
+		}
+		mp.overlayNodes[i] = cells
 	}
 	return nil
 }
