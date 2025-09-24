@@ -1,21 +1,13 @@
 package partitioner
 
 import (
-	"encoding/json"
-	"fmt"
 	"log"
-	"math"
-	"os"
 	"sort"
-	"time"
 
 	"github.com/lintang-b-s/navigatorx-partitioner/pkg/datastructure"
 	"golang.org/x/exp/rand"
 )
 
-// will be used to implement customizable route planning
-// ngasal heheh
-// idk if this implementation is correct, but the partition result is very good & similiar to metis partition result
 type InertialFlow struct {
 	regionSize     int
 	regionsCreated int
@@ -38,18 +30,6 @@ const (
 	artificialSinkID   = int32(2147483647)
 )
 
-// floorPow2 return the largest power of 2 that is <= n.
-func floorPow2(n int) int {
-	if n < 1 {
-		return 0
-	}
-	p := 1
-	for p<<1 <= n {
-		p <<= 1
-	}
-	return p
-}
-
 func (iflow *InertialFlow) PrePartitionSCC(graph *datastructure.Graph, smallComponentSize int32) ([][]int32, [][]int32) {
 	tarjan := NewTarjanSCC(len(graph.GetNodes()))
 	tarjan.run(graph)
@@ -70,33 +50,6 @@ func (iflow *InertialFlow) PrePartitionSCC(graph *datastructure.Graph, smallComp
 	return bigSCCs, smallSCCs
 }
 
-// https://www.sommer.jp/roadseparator.pdf
-func (iflow *InertialFlow) RunInertialFlow(graph *datastructure.Graph) {
-
-	start := time.Now()
-
-	log.Printf("prepartitioning...")
-	bigSCCs, smallSCCs := iflow.PrePartitionSCC(graph, int32(math.Pow(2, 12)))
-
-	log.Printf("prepartitioning done... %d big sccs, %d small sccs", len(bigSCCs), len(smallSCCs))
-
-	log.Printf("running inertial flow partitioning..., with at most %d nodes per cell", iflow.regionSize)
-
-	for _, pNodeIDs := range bigSCCs {
-		iflow.RecursiveBisection(
-			pNodeIDs, graph,
-		)
-	}
-
-	iflow.partitions = append(iflow.partitions, smallSCCs...)
-
-	iflow.saveCutEdgesToFile(iflow.cutEdges, graph)
-
-	iflow.savePartitionsToFile(iflow.partitions, graph, "inertial_flow")
-	log.Printf("regionSize(r): %d, regions created: %d, boundary (min-cut) size: %d, time: %ds", iflow.regionSize,
-		iflow.regionsCreated, len(iflow.cutEdges), int(time.Since(start).Seconds()))
-}
-
 // RecursiveBisection. recursively bisect the graph until the number of nodes in the partition is <= regionSize
 // TODO: make this function run concurrently for each recursion using goroutine pool
 func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastructure.Graph,
@@ -112,16 +65,11 @@ func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastruct
 	v := len(nodeIDs)
 	var lines = [][]float64{{1, 0}, {0, 1}, {1, 1}, {-1, 1}}
 	for i := 0; i < 2; i++ {
-		a := rand.Float64() // [0,1)
-		b := rand.Float64() // [0,1)
+		a := rand.Float64()
+		b := rand.Float64()
 		lines = append(lines, []float64{a, b})
 	}
 	line := lines[rand.Intn(len(lines))]
-	var (
-		idToIndex   map[int32]int32
-		indexToID   []int32
-		edmondsKarp *EdmondsKarp
-	)
 
 	sort.Slice(nodeIDs, func(i, j int) bool {
 		a, b := nodeIDs[i], nodeIDs[j]
@@ -132,9 +80,9 @@ func (iflow *InertialFlow) RecursiveBisection(nodeIDs []int32, graph *datastruct
 	})
 
 	_, curedmondsKarp, currIdToIndex, currIndexToID := iflow.runMaxFlow(nodeIDs, v, graph)
-	idToIndex = currIdToIndex
-	indexToID = currIndexToID
-	edmondsKarp = curedmondsKarp
+	idToIndex := currIdToIndex
+	indexToID := currIndexToID
+	edmondsKarp := curedmondsKarp
 
 	bisectedGraph := [2][]int32{}
 	visited := make([]bool, v+2)
@@ -212,75 +160,4 @@ func (iflow *InertialFlow) runMaxFlow(nodeIDs []int32, v int, graph *datastructu
 	}
 	minCut := edmondsKarp.run(idToIndex[artificialSourceID], idToIndex[artificialSinkID])
 	return minCut, edmondsKarp, idToIndex, indexToID
-}
-
-type cutEdge struct {
-	FromLat float64 `json:"fromLat"`
-	FromLon float64 `json:"fromLon"`
-	ToLat   float64 `json:"toLat"`
-	ToLon   float64 `json:"toLon"`
-}
-
-func (iflow *InertialFlow) saveCutEdgesToFile(cutEdges []datastructure.Edge, graph *datastructure.Graph) error {
-	cutEdgesCoord := make([]cutEdge, 0)
-	for _, edge := range cutEdges {
-		from := graph.GetNode(edge.FromNodeID)
-		to := graph.GetNode(edge.ToNodeID)
-		cutEdgesCoord = append(cutEdgesCoord, cutEdge{
-			FromLat: from.Lat,
-			FromLon: from.Lon,
-			ToLat:   to.Lat,
-			ToLon:   to.Lon,
-		})
-	}
-	buf, err := json.MarshalIndent(cutEdgesCoord, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	if err := os.WriteFile("cutEdges.json", buf, 0644); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (iflow *InertialFlow) savePartitionsToFile(partitions [][]int32, graph *datastructure.Graph,
-	name string) error {
-	type partitionType struct {
-		Nodes []datastructure.Coordinate `json:"nodes"`
-	}
-	nodes := make([]int, len(graph.GetNodes()))
-
-	parts := []partitionType{}
-	for partitionID, partition := range partitions {
-		rand.Seed(uint64(time.Now().UnixNano()))
-		rand.Shuffle(len(partition), func(i, j int) { partition[i], partition[j] = partition[j], partition[i] })
-		partitionNodes := make([]datastructure.Coordinate, 0)
-
-		for i := 0; i < int(float64(len(partition))*0.3); i++ {
-			node := graph.GetNode(partition[i])
-			partitionNodes = append(partitionNodes, datastructure.NewCoordinate(
-				node.Lat, node.Lon,
-			))
-		}
-		parts = append(parts, partitionType{
-			Nodes: partitionNodes,
-		})
-
-		for _, nodeID := range partition {
-			nodes[nodeID] = partitionID
-		}
-	}
-	buf, err := json.MarshalIndent(parts, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("nodes after partitioning: %v\n", len(nodes))
-
-	if err := os.WriteFile(fmt.Sprintf("nodePerPartitions_%s.json", name), buf, 0644); err != nil {
-		return err
-	}
-	return nil
-
 }

@@ -101,7 +101,6 @@ func (kp *KaffpaPartitioner) readPartitionResult(filename string) ([][]int32, er
 
 func (kp *KaffpaPartitioner) saveGraphToFile(filename string) error {
 
-	log.Printf("saving metis graph file to %v.graph\n", filename)
 	file, err := os.Create(fmt.Sprintf(`%v.graph`, filename))
 	if err != nil {
 		return err
@@ -128,7 +127,6 @@ func (kp *KaffpaPartitioner) saveGraphToFile(filename string) error {
 			if !inCell[outEdge.ToNodeID] || nodeId == outEdge.ToNodeID {
 				continue
 			}
-
 			nodeEdges[id] = append(nodeEdges[id], newEdge(originalNodeIdToKaffpaNodeId[outEdge.ToNodeID], outEdge.Weight))
 		}
 
@@ -151,7 +149,7 @@ func (kp *KaffpaPartitioner) saveGraphToFile(filename string) error {
 	}
 
 	writer := bufio.NewWriter(file)
-	_, err = writer.WriteString(fmt.Sprintf("%d %d %d\n", len(kp.nodeIds), int(math.Ceil(float64(edgeCounter/2))), 1))
+	_, err = writer.WriteString(fmt.Sprintf("%d %d %d\n", len(kp.nodeIds), int(edgeCounter/2), 1))
 	if err != nil {
 		return err
 	}
@@ -168,7 +166,7 @@ func (kp *KaffpaPartitioner) saveGraphToFile(filename string) error {
 			if err != nil {
 				return err
 			}
-			if eIdx < len(nodeEdges)-1 {
+			if eIdx < len(edges)-1 {
 				_, err = writer.WriteString(" ")
 				if err != nil {
 					return err

@@ -1,8 +1,6 @@
 package datastructure
 
 import (
-	"log"
-
 	"github.com/lintang-b-s/navigatorx-partitioner/pkg/util"
 )
 
@@ -67,9 +65,6 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 	ch.ContractedFirstOutEdge = make([][]int32, len(ch.ContractedNodes))
 	ch.ContractedFirstInEdge = make([][]int32, len(ch.ContractedNodes))
 
-	log.Printf("intializing original osm graph...")
-
-	// init graph original
 	for _, edge := range ch.GraphStorage.EdgeStorage {
 
 		ch.ContractedFirstOutEdge[edge.FromNodeID] = append(ch.ContractedFirstOutEdge[edge.FromNodeID], int32(edgeID))
@@ -80,8 +75,6 @@ func (ch *Graph) InitGraph(processedNodes []CHNode,
 
 		edgeID++
 	}
-
-	log.Printf("initializing osm graph done... \n total nodes: %d", gLen)
 
 	ch.Metadata.EdgeCount = len(ch.GraphStorage.EdgeStorage)
 	ch.Metadata.NodeCount = gLen
@@ -115,7 +108,7 @@ func (ch *Graph) GetOutDegree(nodeID int32) int {
 	return len(ch.ContractedFirstOutEdge[nodeID])
 }
 
-func (ch *Graph) GetNodeFirstInEdges(nodeID int32) []int32 {	
+func (ch *Graph) GetNodeFirstInEdges(nodeID int32) []int32 {
 	return ch.ContractedFirstInEdge[nodeID]
 }
 

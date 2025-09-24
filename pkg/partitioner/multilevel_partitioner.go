@@ -67,13 +67,6 @@ func (mp *MulitlevelPartitioner) Run(paramName string) error {
 	return mp.writeMLPToMLPFile(fmt.Sprintf("multilevel_partitioning_%s.mlp", paramName))
 }
 
-func (mp *MulitlevelPartitioner) ReadMLPAndCreateCellNumber(paramName string) {
-	// start from highest level
-	mp.ReadAllMLPFile(paramName)
-
-	mp.writeMLPToMLPFile(fmt.Sprintf("multilevel_partitioning_%s.mlp", paramName))
-}
-
 func (mp *MulitlevelPartitioner) RunMLPKaffpa(name string) error {
 	// start from highest level
 	nodeIDs := mp.graph.GetNodeIDs()
@@ -104,7 +97,9 @@ func (mp *MulitlevelPartitioner) RunMLPKaffpa(name string) error {
 			}
 			mp.overlayNodes[level] = append(mp.overlayNodes[level], partitions...)
 			log.Printf("level %d, cell %d done, total cells: %d", level, cellId, len(mp.overlayNodes[level]))
+
 		}
+
 		log.Printf("level %d done, total cells: %d", level, len(mp.overlayNodes[level]))
 		mp.savePartitionsToFile(mp.overlayNodes[level], mp.graph, name, level)
 	}
@@ -131,11 +126,10 @@ func (mp *MulitlevelPartitioner) writeMLPToFile(paramName string) error {
 		}
 
 		log.Printf("level %d, total nodes: %d", i, len(nodeIDCellMap))
-
 		for _, nodeID := range mp.graph.GetNodeIDs() {
 			cellID, exists := nodeIDCellMap[nodeID]
 			if !exists {
-				panic(fmt.Sprintf("nodeID %d not found in cell map", nodeID))
+				return err
 			}
 
 			_, err := f.WriteString(fmt.Sprintf("%d\n", cellID))
@@ -143,71 +137,6 @@ func (mp *MulitlevelPartitioner) writeMLPToFile(paramName string) error {
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func (mp *MulitlevelPartitioner) ReadAllMLPFile(paramName string) error {
-	for i := 0; i < mp.l; i++ {
-		filename := fmt.Sprintf("multilevel_partitioning_level_%d_u_%d_%s.txt", i, mp.u[i], paramName)
-
-		file, err := os.Open(filename)
-
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		stat, err := file.Stat()
-		if err != nil {
-			return err
-		}
-
-		fileSize := stat.Size()
-		buf := make([]byte, fileSize)
-
-		_, err = file.Read(buf)
-		if err != nil {
-			return err
-		}
-
-		lines := string(buf)
-		lineArr := make([]string, 0)
-		currentLine := ""
-		// only read number and not newline
-		for _, ch := range lines {
-			if ch == '\n' {
-				lineArr = append(lineArr, currentLine)
-				currentLine = ""
-			} else {
-				currentLine += string(ch)
-			}
-		}
-		if currentLine != "" {
-			lineArr = append(lineArr, currentLine)
-		}
-
-		nodeIDCellMap := make(map[int32]int)
-
-		for idx, line := range lineArr {
-			var cellID int
-			_, err := fmt.Sscanf(line, "%d", &cellID)
-			if err != nil {
-				return err
-			}
-			nodeIDCellMap[int32(idx)] = cellID
-		}
-
-		cells := make([][]int32, 0)
-		cellIDNodeMap := make(map[int][]int32)
-		for nodeID, cellID := range nodeIDCellMap {
-			cellIDNodeMap[cellID] = append(cellIDNodeMap[cellID], nodeID)
-		}
-
-		for _, cell := range cellIDNodeMap {
-			cells = append(cells, cell)
-		}
-		mp.overlayNodes[i] = cells
 	}
 	return nil
 }

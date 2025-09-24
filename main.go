@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"math"
 	"os"
 
@@ -12,23 +11,17 @@ import (
 )
 
 var (
-	mapFile    = flag.String("f", "solo_jogja.osm.pbf", "openstreeetmap file buat road network graphnya")
-	npartition = flag.Int("n", 16, "jumlah partisi yang diinginkan, default 16")
+	mapFile = flag.String("f", "solo_jogja.osm.pbf", "openstreeetmap file buat road network graphnya")
 )
 
 func main() {
 	dir := "data"
 	if _, err := os.Stat("dir"); os.IsNotExist(err) {
-		// Create directory if not exists
-		err := os.MkdirAll(dir, 0755) // 0755 = rwxr-xr-x
+		err := os.MkdirAll(dir, 0755)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("Created directory:", dir)
-	} else {
-		fmt.Println("Directory already exists:", dir)
 	}
-
 	flag.Parse()
 	osmParser := osmparser.NewOSMParserV2()
 	processedNodes, graphStorage, streetDirection := osmParser.Parse(*mapFile)
@@ -41,9 +34,9 @@ func main() {
 		5,
 		graph,
 	)
-
-	err := mlp.RunMLPKaffpa("kaffpa_solo_jogja")
+	err := mlp.Run("inertial_flow_5_level_crp")
 	if err != nil {
 		panic(err)
 	}
+	// err := mlp.RunMLPKaffpa("kaffpa_test_5_level")
 }
